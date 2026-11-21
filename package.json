@@ -1,5 +1,12 @@
 {
+  "name": "chargepulse-backend",
+  "version": "1.0.0",
+  "main": "server.js",
   "dependencies": {
-    "lucide-react": "^1.60.0"
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "lucide-react": "^1.60.0",
+    "mongoose": "^8.9.5"
   }
 }
