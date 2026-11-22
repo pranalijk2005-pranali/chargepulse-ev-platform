@@ -59,7 +59,7 @@ export default function App() {
       setFavorites(JSON.parse(savedFavs));
     }
 
-    const socket = io('http://localhost:5000');
+    const socket = io('https://chargepulse-ev-platform.onrender.com');
 
     socket.on('connect', () => {
       console.log('Connected to ChargePulse live updates engine');
@@ -111,7 +111,7 @@ export default function App() {
   useEffect(() => {
     async function loadData() {
       try {
-        const res = await fetch('http://localhost:5000/api/stations');
+        const res = await fetch('https://chargepulse-ev-platform.onrender.com/api/stations');
         const data = await res.json();
         if (data.success) setStations(data.stations);
       } catch (err) {
@@ -119,7 +119,7 @@ export default function App() {
       }
 
       try {
-        const resB = await fetch('http://localhost:5000/api/bookings');
+        const resB = await fetch('https://chargepulse-ev-platform.onrender.com/api/bookings');
         const dataB = await resB.json();
         if (dataB.success) setBookingsHistory(dataB.bookings);
       } catch (err) {
@@ -136,7 +136,7 @@ export default function App() {
 
     try {
       const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
-      const res = await fetch(`http://localhost:5000${endpoint}`, {
+      const res = await fetch(`http://${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(authForm)
@@ -258,14 +258,14 @@ export default function App() {
       const token = localStorage.getItem('chargepulse_token');
       
       // 1. Decrement available port & trigger Socket.io real-time broadcast
-      await fetch('http://localhost:5000/api/stations/book', {
+      await fetch('https://chargepulse-ev-platform.onrender.com/api/stations/book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stationId: station.stationId || station._id })
       });
 
       // 2. Verify payment & save booking record
-      const verifyRes = await fetch('http://localhost:5000/api/payments/verify', {
+      const verifyRes = await fetch('https://chargepulse-ev-platform.onrender.com/api/payments/verify', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -311,7 +311,7 @@ export default function App() {
   const handleAddStationDB = async () => {
     if (!newStation.name) { alert('Enter station name'); return; }
     try {
-      const res = await fetch('http://localhost:5000/api/stations', {
+      const res = await fetch('https://chargepulse-ev-platform.onrender.com/api/stations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newStation)
