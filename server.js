@@ -19,6 +19,15 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// Root health/status route
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    service: 'ChargePulse EV Platform API',
+    status: 'running'
+  });
+});
+
 // 📦 MongoDB Connection & Secrets
 const MONGODB_URI = 'mongodb+srv://ev_admin:evpass1234@cluster0.u596shs.mongodb.net/chargepulse_mh?retryWrites=true&w=majority';
 const JWT_SECRET = 'chargepulse_mh_super_secret_jwt_key_2026';
