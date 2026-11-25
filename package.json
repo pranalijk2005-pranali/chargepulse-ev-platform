@@ -20,7 +20,6 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "leaflet": "^1.9.4",
-    "leaflet-routing-machine": "^3.2.12",
     "lucide-react": "^0.468.0",
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
