@@ -25,15 +25,17 @@ function MapController({ userLocation, selectedStation }) {
   const map = useMap();
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       map.invalidateSize();
     }, 100);
 
     if (selectedStation?.lat && selectedStation?.lng) {
       map.setView([Number(selectedStation.lat), Number(selectedStation.lng)], 15);
     } else if (userLocation?.lat && userLocation?.lng) {
-      map.setView([userLocation.lat, userLocation.lng], 14);
+      map.setView([Number(userLocation.lat), Number(userLocation.lng)], 14);
     }
+
+    return () => clearTimeout(timer);
   }, [userLocation, selectedStation, map]);
 
   return null;
@@ -41,13 +43,16 @@ function MapController({ userLocation, selectedStation }) {
 
 export default function EVMap({
   userLocation,
-  stations,
+  stations = [],
   selectedStation,
   onSelectStation,
   onOpenGoogleMaps,
   onLocationSelect,
 }) {
-  const userPos = [userLocation?.lat || 17.6599, userLocation?.lng || 75.9064];
+  const userPos = [
+    Number(userLocation?.lat) || 17.6599,
+    Number(userLocation?.lng) || 75.9064,
+  ];
 
   const routePositions =
     selectedStation?.lat && selectedStation?.lng
