@@ -4,7 +4,7 @@ import {
   Map as MapIcon, Grid, Clock, FileText, BarChart3, CheckCircle2, Compass, AlertTriangle,
   User, Heart, LogOut, Lock, Mail
 } from 'lucide-react';
-import EVMap from './components/EVMap';
+import EVMap from './EVMap';
 import { io } from 'socket.io-client';
 
 const REGIONAL_DEFAULT = { lat: 17.6599, lng: 75.9064 }; // Solapur Central Base
