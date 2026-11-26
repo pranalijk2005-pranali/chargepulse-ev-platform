@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Zap, Search, CreditCard, X, ChevronRight, RefreshCw, Navigation, MapPin,
   Map as MapIcon, Grid, Clock, FileText, BarChart3, CheckCircle2, Compass, AlertTriangle,
-  User, Heart, LogOut, Lock, Mail
+  User, Heart, LogOut, Lock, Mail, Printer, Share2, Trash2
 } from 'lucide-react';
 import EVMap from './EVMap';
 import { io } from 'socket.io-client';
@@ -898,7 +898,7 @@ const handleDeleteBooking = async (booking) => {
           </div>
         )}
 
-        {/* BOOKINGS TAB */}
+       {/* BOOKINGS TAB */}
         {activeTab === 'bookings' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -927,19 +927,47 @@ const handleDeleteBooking = async (booking) => {
                 <div className="space-y-3">
                   {bookingsHistory.map((b, i) => (
                     <div
-                      key={b.bookingId || i}
-                      className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      key={b._id || b.bookingId || i}
+                      className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3"
                     >
-                      <div>
-                        <p className="text-xs font-bold text-emerald-400">{b.bookingId}</p>
-                        <p className="text-sm font-bold text-white">{b.stationName}</p>
-                        <p className="text-xs text-slate-400">
-                          {b.connector} • {b.slotTime}
-                        </p>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold text-emerald-400">{b.bookingId}</p>
+                          <p className="text-sm font-bold text-white">{b.stationName}</p>
+                          <p className="text-xs text-slate-400">
+                            {b.connector} • {b.slotTime}
+                          </p>
+                        </div>
+                        <div className="sm:text-right">
+                          <p className="text-sm font-black text-white">₹{b.cost}</p>
+                          <p className="text-[11px] text-slate-400">{b.date}</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-black text-white">₹{b.cost}</p>
-                        <p className="text-[11px] text-slate-400">{b.date}</p>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800">
+                        <button
+                          onClick={() => handlePrintBooking(b)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Print Receipt</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleShareBooking(b)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+                        >
+                          <Share2 className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Share</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteBooking(b)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 text-xs font-semibold border border-rose-800 transition ml-auto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -948,7 +976,6 @@ const handleDeleteBooking = async (booking) => {
             </div>
           </div>
         )}
-
         {/* ACTIVE CHARGING SESSION TAB */}
         {activeTab === 'session' && activeSession && (
           <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 max-w-xl mx-auto text-center space-y-5">
