@@ -11,7 +11,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST', 'DELETE']
   }
 });
 
@@ -58,6 +58,7 @@ const stationSchema = new mongoose.Schema({
 
 const bookingSchema = new mongoose.Schema({
   bookingId: { type: String, unique: true, required: true },
+  stationId: String,
   stationName: String,
   connector: String,
   slotTime: String,
@@ -482,8 +483,57 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
+// 9. Delete a booking by MongoDB _id or bookingId
+app.delete('/api/bookings/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    const query = isValidObjectId
+      ? { $or: [{ _id: id }, { bookingId: id }] }
+      : { bookingId: id };
+
+    const deletedBooking = await Booking.findOneAndDelete(query);
+
+    if (!deletedBooking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    if (deletedBooking.stationId) {
+      const updatedStation = await Station.findOneAndUpdate(
+        {
+          stationId: deletedBooking.stationId,
+          $expr: { $lt: ['$portsAvail', '$portsTotal'] }
+        },
+        { $inc: { portsAvail: 1 } },
+        { new: true }
+      );
+
+      if (updatedStation) {
+        io.emit('station_updated', {
+          stationId: updatedStation.stationId,
+          portsAvail: updatedStation.portsAvail,
+          timestamp: new Date()
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Booking deleted successfully',
+      deleted: deletedBooking
+    });
+  } catch (err) {
+    console.error('❌ Error deleting booking:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- Server Startup Sequence (Ensures DB is connected before listening) ---
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
@@ -496,7 +546,7 @@ async function startServer() {
 
     // Note: Use server.listen (not app.listen) so Socket.io works!
     server.listen(PORT, () => {
-      console.log(`🚀 ChargePulse Server with Socket.io & Auth running on http://localhost:${PORT}`);
+      console.log(`🚀 ChargePulse Server with Socket.io & Auth running on port ${PORT}`);
     });
   } catch (err) {
     console.error('❌ Failed to start server. Check your connection string.');
