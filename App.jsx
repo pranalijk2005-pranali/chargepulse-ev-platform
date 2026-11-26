@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Zap, Search, CreditCard, X, ChevronRight, RefreshCw, Navigation, MapPin,
-  Map as MapIcon, Grid, Clock, FileText, BarChart3, CheckCircle2, Compass, AlertTriangle,
+  Map as MapIcon, Grid, FileText, BarChart3, CheckCircle2, Compass, AlertTriangle,
   User, Heart, LogOut, Lock, Mail, Printer, Share2, Trash2
 } from 'lucide-react';
 import EVMap from './EVMap';
@@ -9,6 +9,30 @@ import { io } from 'socket.io-client';
 
 const REGIONAL_DEFAULT = { lat: 17.6599, lng: 75.9064 }; // Solapur Central Base
 const API_BASE = import.meta.env.VITE_API_URL || 'https://chargepulse-ev-platform.onrender.com';
+
+export function ChargePulseLogo({ className = 'w-9 h-9' }) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="cpBrandGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#22d3ee" />
+          <stop offset="100%" stopColor="#a3e635" />
+        </linearGradient>
+      </defs>
+      <rect
+        x="4"
+        y="4"
+        width="56"
+        height="56"
+        rx="16"
+        fill="#0b1120"
+        stroke="url(#cpBrandGrad)"
+        strokeWidth="3"
+      />
+      <path d="M36 13L20 35h11l-2 16 16-22H34l2-16z" fill="url(#cpBrandGrad)" />
+    </svg>
+  );
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('explore');
@@ -283,13 +307,14 @@ export default function App() {
 
   // Payment Handler
   const handlePayment = async (station) => {
+    const stationId = station.stationId || station._id;
     try {
       const token = localStorage.getItem('chargepulse_token');
 
       await fetch(`${API_BASE}/api/stations/book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stationId: station.stationId || station._id })
+        body: JSON.stringify({ stationId })
       });
 
       const verifyRes = await fetch(`${API_BASE}/api/payments/verify`, {
@@ -299,6 +324,7 @@ export default function App() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          stationId,
           stationName: station.name,
           connector: `${station.connector} (${selectedPort})`,
           slotTime: selectedTimeSlot,
@@ -317,6 +343,7 @@ export default function App() {
       } else {
         const mockBooking = {
           bookingId: `CP-${Math.floor(100000 + Math.random() * 900000)}`,
+          stationId,
           date: new Date().toLocaleDateString(),
           stationName: station.name,
           connector: `${station.connector} (${selectedPort})`,
@@ -333,89 +360,90 @@ export default function App() {
       alert('Booking saved to local history.');
     }
   };
+
   // Print Receipt Handler
-const handlePrintBooking = (booking) => {
-  const printWindow = window.open('', '_blank', 'width=600,height=700');
-  if (!printWindow) {
-    alert('Please allow pop-ups to print your booking receipt.');
-    return;
-  }
-
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>ChargePulse Receipt - ${booking.bookingId}</title>
-        <style>
-          body { font-family: sans-serif; padding: 32px; color: #0f172a; }
-          .card { border: 2px solid #10b981; border-radius: 16px; padding: 24px; max-width: 480px; margin: auto; }
-          h1 { color: #059669; margin-bottom: 4px; }
-          .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
-          .label { color: #64748b; font-size: 13px; }
-          .value { font-weight: bold; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h1>ChargePulse EV Receipt</h1>
-          <p style="color:#64748b;font-size:12px;margin-top:0;">Maharashtra EV Charging Grid</p>
-          <div class="row"><span class="label">Booking ID</span><span class="value">${booking.bookingId}</span></div>
-          <div class="row"><span class="label">Station</span><span class="value">${booking.stationName}</span></div>
-          <div class="row"><span class="label">Connector & Port</span><span class="value">${booking.connector}</span></div>
-          <div class="row"><span class="label">Time Slot</span><span class="value">${booking.slotTime}</span></div>
-          <div class="row"><span class="label">Date</span><span class="value">${booking.date || new Date().toLocaleDateString()}</span></div>
-          <div class="row" style="border-bottom:none;"><span class="label">Amount Paid</span><span class="value">₹${booking.cost}</span></div>
-        </div>
-        <script>window.onload = () => { window.print(); window.close(); };</script>
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-};
-
-// Share Booking Handler (Web Share API + Clipboard Fallback)
-const handleShareBooking = async (booking) => {
-  const shareText = `⚡ ChargePulse EV Booking Confirmed!\nBooking ID: ${booking.bookingId}\nStation: ${booking.stationName}\nConnector: ${booking.connector}\nSlot: ${booking.slotTime}\nAmount Paid: ₹${booking.cost}`;
-
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title: `ChargePulse Booking - ${booking.bookingId}`,
-        text: shareText,
-      });
+  const handlePrintBooking = (booking) => {
+    const printWindow = window.open('', '_blank', 'width=600,height=700');
+    if (!printWindow) {
+      alert('Please allow pop-ups to print your booking receipt.');
       return;
-    } catch (err) {
-      // User cancelled or share unsupported; fall back to clipboard
     }
-  }
 
-  try {
-    await navigator.clipboard.writeText(shareText);
-    alert('Booking details copied to clipboard! Ready to paste and share.');
-  } catch (err) {
-    alert(shareText);
-  }
-};
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>ChargePulse Receipt - ${booking.bookingId}</title>
+          <style>
+            body { font-family: sans-serif; padding: 32px; color: #0f172a; }
+            .card { border: 2px solid #06b6d4; border-radius: 16px; padding: 24px; max-width: 480px; margin: auto; }
+            h1 { color: #0891b2; margin-bottom: 4px; }
+            .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+            .label { color: #64748b; font-size: 13px; }
+            .value { font-weight: bold; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>ChargePulse EV Receipt</h1>
+            <p style="color:#64748b;font-size:12px;margin-top:0;">Maharashtra EV Charging Grid</p>
+            <div class="row"><span class="label">Booking ID</span><span class="value">${booking.bookingId}</span></div>
+            <div class="row"><span class="label">Station</span><span class="value">${booking.stationName}</span></div>
+            <div class="row"><span class="label">Connector & Port</span><span class="value">${booking.connector}</span></div>
+            <div class="row"><span class="label">Time Slot</span><span class="value">${booking.slotTime}</span></div>
+            <div class="row"><span class="label">Date</span><span class="value">${booking.date || new Date().toLocaleDateString()}</span></div>
+            <div class="row" style="border-bottom:none;"><span class="label">Amount Paid</span><span class="value">₹${booking.cost}</span></div>
+          </div>
+          <script>window.onload = () => { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
-// Delete / Cancel Booking Handler
-const handleDeleteBooking = async (booking) => {
-  const targetId = booking._id || booking.bookingId;
-  if (!window.confirm(`Cancel and delete booking ${booking.bookingId} at ${booking.stationName}?`)) {
-    return;
-  }
+  // Share Booking Handler (Web Share API + Clipboard Fallback)
+  const handleShareBooking = async (booking) => {
+    const shareText = `⚡ ChargePulse EV Booking Confirmed!\nBooking ID: ${booking.bookingId}\nStation: ${booking.stationName}\nConnector: ${booking.connector}\nSlot: ${booking.slotTime}\nAmount Paid: ₹${booking.cost}`;
 
-  try {
-    await fetch(`${API_BASE}/api/bookings/${targetId}`, {
-      method: 'DELETE',
-    });
-  } catch (err) {
-    console.log('Backend delete fallback active.');
-  }
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `ChargePulse Booking - ${booking.bookingId}`,
+          text: shareText,
+        });
+        return;
+      } catch (err) {
+        // User cancelled or share unsupported; fall back to clipboard
+      }
+    }
 
-  setBookingsHistory((prev) =>
-    prev.filter((b) => (b._id || b.bookingId) !== targetId)
-  );
-  alert(`Booking ${booking.bookingId} deleted.`);
-};
+    try {
+      await navigator.clipboard.writeText(shareText);
+      alert('Booking details copied to clipboard! Ready to paste and share.');
+    } catch (err) {
+      alert(shareText);
+    }
+  };
+
+  // Delete / Cancel Booking Handler
+  const handleDeleteBooking = async (booking) => {
+    const targetId = booking._id || booking.bookingId;
+    if (!window.confirm(`Cancel and delete booking ${booking.bookingId} at ${booking.stationName}?`)) {
+      return;
+    }
+
+    try {
+      await fetch(`${API_BASE}/api/bookings/${targetId}`, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      console.log('Backend delete fallback active.');
+    }
+
+    setBookingsHistory((prev) =>
+      prev.filter((b) => (b._id || b.bookingId) !== targetId)
+    );
+    alert(`Booking ${booking.bookingId} deleted.`);
+  };
 
   // Add Partner Station
   const handleAddStationDB = async () => {
@@ -517,17 +545,15 @@ const handleDeleteBooking = async (booking) => {
   const totalEnergy = bookingsHistory.length * 24;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans antialiased selection:bg-cyan-400 selection:text-slate-950">
       {/* HEADER */}
-      <header className="bg-slate-900/90 backdrop-blur border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+      <header className="bg-[#070b14]/90 backdrop-blur-xl border-b border-cyan-500/15 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          <div className="bg-gradient-to-tr from-emerald-600 to-emerald-400 p-2.5 rounded-2xl text-slate-950 shadow-lg shadow-emerald-500/20">
-            <Zap className="w-5 h-5 fill-current" />
-          </div>
+          <ChargePulseLogo className="w-10 h-10 shrink-0 shadow-lg shadow-cyan-500/15" />
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold text-white">ChargePulse</h1>
-              <span className="text-[10px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded-full uppercase font-bold tracking-wide">
+              <h1 className="text-base font-black tracking-tight text-white">ChargePulse</h1>
+              <span className="text-[10px] text-lime-300 bg-lime-400/10 border border-lime-400/30 px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">
                 Maharashtra Grid v2.0
               </span>
             </div>
@@ -537,19 +563,19 @@ const handleDeleteBooking = async (booking) => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5 sm:space-x-3">
           <button
             onClick={handleSyncOpenChargeMap}
             disabled={isSyncing}
-            className="hidden sm:flex bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 text-xs px-3.5 py-2 rounded-xl items-center space-x-2 transition"
+            className="hidden sm:flex bg-[#0c1322] hover:bg-slate-800 border border-cyan-500/20 text-cyan-300 text-xs px-3.5 py-2 rounded-xl items-center space-x-2 transition"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>{isSyncing ? 'Syncing...' : 'Sync Live API'}</span>
           </button>
 
           {user ? (
-            <div className="flex items-center space-x-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl">
-              <User className="w-4 h-4 text-emerald-400" />
+            <div className="flex items-center space-x-2 bg-[#0c1322] border border-slate-800 px-3 py-1.5 rounded-xl">
+              <User className="w-4 h-4 text-cyan-400" />
               <span className="text-xs font-semibold text-slate-200 hidden md:inline">
                 {user.name}
               </span>
@@ -564,25 +590,29 @@ const handleDeleteBooking = async (booking) => {
           ) : (
             <button
               onClick={() => setAuthModalOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-3.5 py-2 rounded-xl transition shadow"
+              className="bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold text-xs px-3.5 py-2 rounded-xl transition shadow-md shadow-cyan-500/15"
             >
               Sign In / Driver Profile
             </button>
           )}
 
-          <nav className="flex space-x-1 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+          <nav className="flex space-x-1 bg-[#0c1322] border border-slate-800 p-1 rounded-full">
             <button
               onClick={() => setActiveTab('explore')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                activeTab === 'explore' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition ${
+                activeTab === 'explore'
+                  ? 'bg-gradient-to-r from-cyan-400 to-lime-300 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               Explore
             </button>
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                activeTab === 'bookings' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition ${
+                activeTab === 'bookings'
+                  ? 'bg-gradient-to-r from-cyan-400 to-lime-300 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               Bookings
@@ -590,8 +620,10 @@ const handleDeleteBooking = async (booking) => {
             {activeSession && (
               <button
                 onClick={() => setActiveTab('session')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition animate-pulse ${
-                  activeTab === 'session' ? 'bg-emerald-500 text-slate-950' : 'text-emerald-400'
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition animate-pulse ${
+                  activeTab === 'session'
+                    ? 'bg-gradient-to-r from-cyan-400 to-lime-300 text-slate-950'
+                    : 'text-lime-300'
                 }`}
               >
                 Charging
@@ -599,8 +631,10 @@ const handleDeleteBooking = async (booking) => {
             )}
             <button
               onClick={() => setActiveTab('admin')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                activeTab === 'admin' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition ${
+                activeTab === 'admin'
+                  ? 'bg-gradient-to-r from-cyan-400 to-lime-300 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               Partner
@@ -610,13 +644,13 @@ const handleDeleteBooking = async (booking) => {
       </header>
 
       {/* MAIN CONTAINER */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
+      <main className="flex-1 p-4 sm:p-6 max-w-7xl mx-auto w-full space-y-6">
         {activeTab === 'explore' && (
           <div className="space-y-6">
             {/* HERO BANNER */}
-            <div className="bg-gradient-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div className="bg-gradient-to-br from-cyan-950/60 via-[#0d1526] to-[#090e1a] border border-cyan-400/20 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 text-xs font-semibold">
                   <Compass className="w-3.5 h-3.5 animate-spin" />
                   <span>
                     {userLocation.isLiveGPS
@@ -624,10 +658,10 @@ const handleDeleteBooking = async (booking) => {
                       : 'Regional Default Base Active'}
                   </span>
                 </div>
-                <h2 className="text-2xl font-black text-white">
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
                   Find & Navigate EV Stations Across Maharashtra
                 </h2>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs sm:text-sm text-slate-400">
                   Nearest fast chargers ranked automatically by distance from your current location.
                 </p>
               </div>
@@ -638,7 +672,7 @@ const handleDeleteBooking = async (booking) => {
                   className={`w-full sm:w-auto px-4 py-3 rounded-2xl text-xs font-extrabold flex items-center justify-center space-x-2 transition ${
                     showFavoritesOnly
                       ? 'bg-rose-600 text-white border border-rose-400'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                      : 'bg-[#0c1322] hover:bg-slate-800 text-slate-200 border border-slate-800'
                   }`}
                 >
                   <Heart
@@ -656,7 +690,7 @@ const handleDeleteBooking = async (booking) => {
                   className={`w-full sm:w-auto px-4 py-3 rounded-2xl text-xs font-extrabold flex items-center justify-center space-x-2 transition shadow-lg ${
                     sosEmergencyOnly
                       ? 'bg-rose-600 text-white animate-bounce shadow-rose-600/40 border border-rose-400'
-                      : 'bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800'
+                      : 'bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/80'
                   }`}
                 >
                   <AlertTriangle className="w-4 h-4 text-rose-400 animate-pulse" />
@@ -668,15 +702,15 @@ const handleDeleteBooking = async (booking) => {
                 </button>
 
                 <div className="flex gap-3 w-full sm:w-auto">
-                  <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl text-center flex-1 sm:w-28">
-                    <span className="text-2xl font-black text-emerald-400">
+                  <div className="bg-[#070b14] border border-cyan-500/20 p-4 rounded-2xl text-center flex-1 sm:w-28">
+                    <span className="text-2xl font-black text-cyan-300">
                       {processedStations.length}
                     </span>
                     <p className="text-[10px] text-slate-400">Hubs Found</p>
                   </div>
                   {processedStations[0] && (
-                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl text-center flex-1 sm:w-28">
-                      <span className="text-2xl font-black text-blue-400">
+                    <div className="bg-[#070b14] border border-lime-400/20 p-4 rounded-2xl text-center flex-1 sm:w-28">
+                      <span className="text-2xl font-black text-lime-300">
                         {processedStations[0].calculatedDistanceKm <= 1
                           ? `${Math.round(processedStations[0].calculatedDistanceKm * 1000)} m`
                           : `${processedStations[0].calculatedDistanceKm} km`}
@@ -689,7 +723,7 @@ const handleDeleteBooking = async (booking) => {
             </div>
 
             {/* SEARCH & FILTERS */}
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="bg-[#0c1322] border border-slate-800/90 p-4 rounded-2xl grid grid-cols-1 md:grid-cols-5 gap-3">
               <div className="relative md:col-span-2">
                 <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input
@@ -697,7 +731,7 @@ const handleDeleteBooking = async (booking) => {
                   placeholder="Search station, taluka, address..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-400"
                 />
               </div>
 
@@ -705,7 +739,7 @@ const handleDeleteBooking = async (booking) => {
                 <select
                   value={selectedDistrict}
                   onChange={(e) => setSelectedDistrict(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 text-ellipsis overflow-hidden"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-400 text-ellipsis overflow-hidden"
                 >
                   <option value="All">All Maharashtra Districts</option>
                   <option value="Solapur">Solapur</option>
@@ -723,7 +757,7 @@ const handleDeleteBooking = async (booking) => {
                 <select
                   value={selectedVehicleType}
                   onChange={(e) => setSelectedVehicleType(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-400"
                 >
                   <option value="All">All Vehicle Types</option>
                   <option value="Car">E-Cars (CCS2 / DC)</option>
@@ -731,11 +765,13 @@ const handleDeleteBooking = async (booking) => {
                 </select>
               </div>
 
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <div className="flex bg-[#070b14] p-1 rounded-xl border border-slate-800">
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`flex-1 flex items-center justify-center space-x-1 py-1.5 rounded-lg text-xs font-semibold ${
-                    viewMode === 'grid' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+                  className={`flex-1 flex items-center justify-center space-x-1 py-1.5 rounded-lg text-xs font-bold transition ${
+                    viewMode === 'grid'
+                      ? 'bg-gradient-to-r from-cyan-400 to-lime-300 text-slate-950'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <Grid className="w-3.5 h-3.5" />
@@ -743,7 +779,7 @@ const handleDeleteBooking = async (booking) => {
                 </button>
                 <button
                   onClick={() => openRealGoogleMapsView()}
-                  className="flex-1 flex items-center justify-center space-x-1 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition shadow"
+                  className="flex-1 flex items-center justify-center space-x-1 py-1.5 rounded-lg text-xs font-bold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-400/30 transition"
                 >
                   <MapIcon className="w-3.5 h-3.5" />
                   <span>Map View</span>
@@ -755,7 +791,7 @@ const handleDeleteBooking = async (booking) => {
             {viewMode === 'grid' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {processedStations.length === 0 ? (
-                  <div className="col-span-full bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+                  <div className="col-span-full bg-[#0c1322] border border-slate-800 rounded-3xl p-12 text-center space-y-3">
                     <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto animate-bounce" />
                     <h3 className="text-base font-bold text-white">No stations found nearby</h3>
                     <p className="text-xs text-slate-400 max-w-md mx-auto">
@@ -774,15 +810,15 @@ const handleDeleteBooking = async (booking) => {
                     return (
                       <div
                         key={stId}
-                        className={`bg-slate-900 border rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-lg transition ${
+                        className={`bg-[#0c1322] border rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-lg transition ${
                           isUltraNear
                             ? 'border-rose-500/80 shadow-rose-500/10'
-                            : 'border-slate-800 hover:border-emerald-500/40'
+                            : 'border-slate-800/90 hover:border-cyan-400/40'
                         }`}
                       >
                         <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-semibold px-2.5 py-1 bg-slate-800 text-emerald-400 rounded-lg border border-slate-700">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold px-2.5 py-1 bg-[#070b14] text-cyan-300 rounded-xl border border-slate-800">
                               {station.operator}
                             </span>
 
@@ -792,19 +828,19 @@ const handleDeleteBooking = async (booking) => {
                                 className={`p-1.5 rounded-xl border transition ${
                                   isFav
                                     ? 'bg-rose-950 border-rose-800 text-rose-400'
-                                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                                    : 'bg-[#070b14] border-slate-800 text-slate-400 hover:text-rose-400'
                                 }`}
                               >
                                 <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-current' : ''}`} />
                               </button>
 
                               <span
-                                className={`text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 ${
+                                className={`text-xs font-bold px-2.5 py-1 rounded-xl flex items-center gap-1 ${
                                   isUltraNear
                                     ? 'bg-rose-600 text-white animate-pulse'
                                     : index === 0
-                                    ? 'bg-emerald-500 text-slate-950'
-                                    : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                    ? 'bg-gradient-to-r from-cyan-400 to-lime-300 text-slate-950'
+                                    : 'bg-cyan-400/15 text-cyan-300 border border-cyan-400/25'
                                 }`}
                               >
                                 <MapPin className="w-3 h-3" />
@@ -827,10 +863,10 @@ const handleDeleteBooking = async (booking) => {
                           </div>
                         </div>
 
-                        <div className="space-y-3 pt-3 border-t border-slate-800">
-                          <div className="flex items-center justify-between bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                        <div className="space-y-3 pt-3 border-t border-slate-800/80">
+                          <div className="flex items-center justify-between bg-[#070b14] p-3 rounded-2xl border border-slate-800/80">
                             <div>
-                              <p className="text-[10px] text-slate-400 uppercase font-medium">
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
                                 Connector
                               </p>
                               <p className="text-xs font-bold text-slate-200 mt-0.5">
@@ -838,19 +874,19 @@ const handleDeleteBooking = async (booking) => {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-slate-400 uppercase font-medium">
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
                                 Tariff
                               </p>
-                              <p className="text-sm font-black text-emerald-400 mt-0.5">
+                              <p className="text-sm font-black text-lime-300 mt-0.5">
                                 ₹{station.price}/kWh
                               </p>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-2 gap-2.5">
                             <button
                               onClick={() => setBookingModalStation(station)}
-                              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center space-x-1"
+                              className="bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-2.5 px-3 rounded-2xl text-xs transition flex items-center justify-center space-x-1"
                             >
                               <span>Book Slot</span>
                               <ChevronRight className="w-3.5 h-3.5" />
@@ -858,7 +894,7 @@ const handleDeleteBooking = async (booking) => {
 
                             <button
                               onClick={() => handleShowRouteInApp(station)}
-                              className="bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 font-semibold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition"
+                              className="bg-[#070b14] hover:bg-slate-800 text-cyan-300 border border-slate-700 font-bold py-2.5 px-3 rounded-2xl text-xs flex items-center justify-center space-x-1.5 transition"
                             >
                               <Navigation className="w-3.5 h-3.5" />
                               <span>Show Route</span>
@@ -874,9 +910,9 @@ const handleDeleteBooking = async (booking) => {
 
             {/* IN-APP LEAFLET MAP VIEW */}
             {viewMode === 'map' && (
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl p-2 h-[550px] relative">
-                <div className="absolute top-4 right-4 z-[400] bg-slate-950/90 backdrop-blur border border-slate-800 p-2 rounded-xl flex items-center gap-2 shadow-lg">
-                  <span className="text-xs text-slate-300 font-medium px-2">
+              <div className="bg-[#0c1322] border border-slate-800 rounded-3xl overflow-hidden shadow-xl p-2 h-[550px] relative">
+                <div className="absolute top-4 right-4 z-[400] bg-[#070b14]/90 backdrop-blur border border-cyan-500/20 p-2 rounded-xl flex items-center gap-2 shadow-lg">
+                  <span className="text-xs text-cyan-300 font-medium px-2">
                     In-App Routing Active
                   </span>
                   <button
@@ -898,27 +934,27 @@ const handleDeleteBooking = async (booking) => {
           </div>
         )}
 
-       {/* BOOKINGS TAB */}
+        {/* BOOKINGS TAB */}
         {activeTab === 'bookings' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+              <div className="bg-[#0c1322] border border-slate-800 p-5 rounded-2xl">
                 <p className="text-xs text-slate-400">Total Sessions</p>
                 <p className="text-2xl font-black text-white mt-1">{bookingsHistory.length}</p>
               </div>
-              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+              <div className="bg-[#0c1322] border border-slate-800 p-5 rounded-2xl">
                 <p className="text-xs text-slate-400">Estimated Energy</p>
-                <p className="text-2xl font-black text-emerald-400 mt-1">{totalEnergy} kWh</p>
+                <p className="text-2xl font-black text-lime-300 mt-1">{totalEnergy} kWh</p>
               </div>
-              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+              <div className="bg-[#0c1322] border border-slate-800 p-5 rounded-2xl">
                 <p className="text-xs text-slate-400">Total Spent</p>
-                <p className="text-2xl font-black text-blue-400 mt-1">₹{totalRevenue}</p>
+                <p className="text-2xl font-black text-cyan-300 mt-1">₹{totalRevenue}</p>
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
+            <div className="bg-[#0c1322] border border-slate-800 rounded-3xl p-6 space-y-4">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-emerald-400" />
+                <FileText className="w-5 h-5 text-cyan-400" />
                 <span>Booking Receipts</span>
               </h2>
               {bookingsHistory.length === 0 ? (
@@ -928,18 +964,18 @@ const handleDeleteBooking = async (booking) => {
                   {bookingsHistory.map((b, i) => (
                     <div
                       key={b._id || b.bookingId || i}
-                      className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3"
+                      className="bg-[#070b14] border border-slate-800 p-4 rounded-2xl space-y-3"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-bold text-emerald-400">{b.bookingId}</p>
+                          <p className="text-xs font-bold text-cyan-300">{b.bookingId}</p>
                           <p className="text-sm font-bold text-white">{b.stationName}</p>
                           <p className="text-xs text-slate-400">
                             {b.connector} • {b.slotTime}
                           </p>
                         </div>
                         <div className="sm:text-right">
-                          <p className="text-sm font-black text-white">₹{b.cost}</p>
+                          <p className="text-sm font-black text-lime-300">₹{b.cost}</p>
                           <p className="text-[11px] text-slate-400">{b.date}</p>
                         </div>
                       </div>
@@ -947,17 +983,17 @@ const handleDeleteBooking = async (booking) => {
                       <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800">
                         <button
                           onClick={() => handlePrintBooking(b)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0c1322] hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700 transition"
                         >
-                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                          <Printer className="w-3.5 h-3.5 text-cyan-400" />
                           <span>Print Receipt</span>
                         </button>
 
                         <button
                           onClick={() => handleShareBooking(b)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0c1322] hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700 transition"
                         >
-                          <Share2 className="w-3.5 h-3.5 text-blue-400" />
+                          <Share2 className="w-3.5 h-3.5 text-lime-300" />
                           <span>Share</span>
                         </button>
 
@@ -976,10 +1012,11 @@ const handleDeleteBooking = async (booking) => {
             </div>
           </div>
         )}
+
         {/* ACTIVE CHARGING SESSION TAB */}
         {activeTab === 'session' && activeSession && (
-          <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 max-w-xl mx-auto text-center space-y-5">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-pulse" />
+          <div className="bg-[#0c1322] border border-cyan-400/30 rounded-3xl p-8 max-w-xl mx-auto text-center space-y-5">
+            <CheckCircle2 className="w-12 h-12 text-lime-300 mx-auto animate-pulse" />
             <h2 className="text-xl font-black text-white">Charging Session Active</h2>
             <p className="text-sm text-slate-300">{activeSession.station.name}</p>
             <p className="text-xs text-slate-400">
@@ -999,9 +1036,9 @@ const handleDeleteBooking = async (booking) => {
 
         {/* PARTNER REGISTRATION TAB */}
         {activeTab === 'admin' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl mx-auto space-y-4">
+          <div className="bg-[#0c1322] border border-slate-800 rounded-3xl p-6 max-w-2xl mx-auto space-y-4">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-emerald-400" />
+              <BarChart3 className="w-5 h-5 text-cyan-400" />
               <span>Register Partner Charging Hub</span>
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1010,40 +1047,40 @@ const handleDeleteBooking = async (booking) => {
                 placeholder="Station Name"
                 value={newStation.name}
                 onChange={(e) => setNewStation({ ...newStation, name: e.target.value })}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                className="bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
               />
               <input
                 type="text"
                 placeholder="District (e.g. Solapur)"
                 value={newStation.district}
                 onChange={(e) => setNewStation({ ...newStation, district: e.target.value })}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                className="bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
               />
               <input
                 type="text"
                 placeholder="Address"
                 value={newStation.address}
                 onChange={(e) => setNewStation({ ...newStation, address: e.target.value })}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white sm:col-span-2"
+                className="bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white sm:col-span-2"
               />
               <input
                 type="text"
                 placeholder="Connector (e.g. CCS2 60kW DC)"
                 value={newStation.connector}
                 onChange={(e) => setNewStation({ ...newStation, connector: e.target.value })}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                className="bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
               />
               <input
                 type="number"
                 placeholder="Price per kWh (₹)"
                 value={newStation.price}
                 onChange={(e) => setNewStation({ ...newStation, price: e.target.value })}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                className="bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
               />
             </div>
             <button
               onClick={handleAddStationDB}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs"
+              className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs"
             >
               Publish Charging Station
             </button>
@@ -1054,7 +1091,7 @@ const handleDeleteBooking = async (booking) => {
       {/* BOOKING MODAL */}
       {bookingModalStation && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-[#0c1322] border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white">Reserve Charging Slot</h3>
               <button
@@ -1072,7 +1109,7 @@ const handleDeleteBooking = async (booking) => {
                 <select
                   value={selectedPort}
                   onChange={(e) => setSelectedPort(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
                 >
                   <option>Port 1 (Fast DC 60kW)</option>
                   <option>Port 2 (Type 2 AC 22kW)</option>
@@ -1083,7 +1120,7 @@ const handleDeleteBooking = async (booking) => {
                 <select
                   value={selectedTimeSlot}
                   onChange={(e) => setSelectedTimeSlot(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
                 >
                   <option>10:00 AM - 11:00 AM</option>
                   <option>11:00 AM - 12:00 PM</option>
@@ -1095,7 +1132,7 @@ const handleDeleteBooking = async (booking) => {
 
             <button
               onClick={() => handlePayment(bookingModalStation)}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-3 rounded-xl text-xs flex items-center justify-center gap-2"
             >
               <CreditCard className="w-4 h-4" />
               <span>Confirm & Pay ₹{bookingModalStation.price}</span>
@@ -1107,7 +1144,7 @@ const handleDeleteBooking = async (booking) => {
       {/* AUTH MODAL */}
       {authModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-[#0c1322] border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white">
                 {isSignUp ? 'Create Driver Account' : 'Driver Sign In'}
@@ -1127,7 +1164,7 @@ const handleDeleteBooking = async (booking) => {
                   placeholder="Full Name"
                   value={authForm.name}
                   onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white"
                 />
               )}
               <div className="relative">
@@ -1137,7 +1174,7 @@ const handleDeleteBooking = async (booking) => {
                   placeholder="Email Address"
                   value={authForm.email}
                   onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white"
                 />
               </div>
               <div className="relative">
@@ -1147,12 +1184,12 @@ const handleDeleteBooking = async (booking) => {
                   placeholder="Password"
                   value={authForm.password}
                   onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white"
                 />
               </div>
               <button
                 type="submit"
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs"
+                className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs"
               >
                 {isSignUp ? 'Sign Up' : 'Sign In'}
               </button>
@@ -1160,7 +1197,7 @@ const handleDeleteBooking = async (booking) => {
 
             <button
               onClick={() => setIsSignUp(!isSignUp)}
-              className="w-full text-center text-xs text-emerald-400 hover:underline"
+              className="w-full text-center text-xs text-cyan-300 hover:underline"
             >
               {isSignUp ? 'Already have an account? Sign In' : 'New driver? Create an account'}
             </button>
