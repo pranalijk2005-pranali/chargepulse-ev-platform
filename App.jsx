@@ -333,6 +333,89 @@ export default function App() {
       alert('Booking saved to local history.');
     }
   };
+  // Print Receipt Handler
+const handlePrintBooking = (booking) => {
+  const printWindow = window.open('', '_blank', 'width=600,height=700');
+  if (!printWindow) {
+    alert('Please allow pop-ups to print your booking receipt.');
+    return;
+  }
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>ChargePulse Receipt - ${booking.bookingId}</title>
+        <style>
+          body { font-family: sans-serif; padding: 32px; color: #0f172a; }
+          .card { border: 2px solid #10b981; border-radius: 16px; padding: 24px; max-width: 480px; margin: auto; }
+          h1 { color: #059669; margin-bottom: 4px; }
+          .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+          .label { color: #64748b; font-size: 13px; }
+          .value { font-weight: bold; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>ChargePulse EV Receipt</h1>
+          <p style="color:#64748b;font-size:12px;margin-top:0;">Maharashtra EV Charging Grid</p>
+          <div class="row"><span class="label">Booking ID</span><span class="value">${booking.bookingId}</span></div>
+          <div class="row"><span class="label">Station</span><span class="value">${booking.stationName}</span></div>
+          <div class="row"><span class="label">Connector & Port</span><span class="value">${booking.connector}</span></div>
+          <div class="row"><span class="label">Time Slot</span><span class="value">${booking.slotTime}</span></div>
+          <div class="row"><span class="label">Date</span><span class="value">${booking.date || new Date().toLocaleDateString()}</span></div>
+          <div class="row" style="border-bottom:none;"><span class="label">Amount Paid</span><span class="value">₹${booking.cost}</span></div>
+        </div>
+        <script>window.onload = () => { window.print(); window.close(); };</script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
+// Share Booking Handler (Web Share API + Clipboard Fallback)
+const handleShareBooking = async (booking) => {
+  const shareText = `⚡ ChargePulse EV Booking Confirmed!\nBooking ID: ${booking.bookingId}\nStation: ${booking.stationName}\nConnector: ${booking.connector}\nSlot: ${booking.slotTime}\nAmount Paid: ₹${booking.cost}`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: `ChargePulse Booking - ${booking.bookingId}`,
+        text: shareText,
+      });
+      return;
+    } catch (err) {
+      // User cancelled or share unsupported; fall back to clipboard
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(shareText);
+    alert('Booking details copied to clipboard! Ready to paste and share.');
+  } catch (err) {
+    alert(shareText);
+  }
+};
+
+// Delete / Cancel Booking Handler
+const handleDeleteBooking = async (booking) => {
+  const targetId = booking._id || booking.bookingId;
+  if (!window.confirm(`Cancel and delete booking ${booking.bookingId} at ${booking.stationName}?`)) {
+    return;
+  }
+
+  try {
+    await fetch(`${API_BASE}/api/bookings/${targetId}`, {
+      method: 'DELETE',
+    });
+  } catch (err) {
+    console.log('Backend delete fallback active.');
+  }
+
+  setBookingsHistory((prev) =>
+    prev.filter((b) => (b._id || b.bookingId) !== targetId)
+  );
+  alert(`Booking ${booking.bookingId} deleted.`);
+};
 
   // Add Partner Station
   const handleAddStationDB = async () => {
