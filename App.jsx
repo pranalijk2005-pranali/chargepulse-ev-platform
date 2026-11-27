@@ -152,9 +152,9 @@ export default function App() {
     return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
   };
 
-  // 4. Initial Load
+  // 4. Initial Load & User-Scoped Bookings
   useEffect(() => {
-    async function loadData() {
+    async function loadStations() {
       try {
         const res = await fetch(`${API_BASE}/api/stations`);
         const data = await res.json();
@@ -162,17 +162,29 @@ export default function App() {
       } catch (err) {
         console.log('Backend server offline.');
       }
+    }
+    loadStations();
+  }, []);
 
+  useEffect(() => {
+    async function loadUserBookings() {
+      if (!user?.email) {
+        const guestBookings = JSON.parse(localStorage.getItem('chargepulse_guest_bookings') || '[]');
+        setBookingsHistory(guestBookings);
+        return;
+      }
       try {
-        const resB = await fetch(`${API_BASE}/api/bookings`);
+        const resB = await fetch(
+          `${API_BASE}/api/bookings?email=${encodeURIComponent(user.email)}`
+        );
         const dataB = await resB.json();
         if (dataB.success) setBookingsHistory(dataB.bookings);
       } catch (err) {
         console.log('Bookings API offline.');
       }
     }
-    loadData();
-  }, []);
+    loadUserBookings();
+  }, [user]);
 
   // JWT AUTHENTICATION HANDLERS
   const handleAuthSubmit = async (e) => {
@@ -324,6 +336,7 @@ export default function App() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          userEmail: user?.email || null,
           stationId,
           stationName: station.name,
           connector: `${station.connector} (${selectedPort})`,
@@ -335,7 +348,13 @@ export default function App() {
 
       if (verifyData.success) {
         const newBooking = verifyData.booking;
-        setBookingsHistory((prev) => [newBooking, ...prev]);
+        setBookingsHistory((prev) => {
+          const updated = [newBooking, ...prev];
+          if (!user?.email) {
+            localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
+          }
+          return updated;
+        });
         setActiveSession({ station, port: selectedPort, time: selectedTimeSlot });
         alert(`Booking Confirmed!\nBooking ID: ${newBooking.bookingId}`);
         setBookingModalStation(null);
@@ -350,7 +369,13 @@ export default function App() {
           slotTime: selectedTimeSlot,
           cost: station.price || 50
         };
-        setBookingsHistory((prev) => [mockBooking, ...prev]);
+        setBookingsHistory((prev) => {
+          const updated = [mockBooking, ...prev];
+          if (!user?.email) {
+            localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
+          }
+          return updated;
+        });
         setActiveSession({ station, port: selectedPort, time: selectedTimeSlot });
         alert(`Booking Confirmed!\nBooking ID: ${mockBooking.bookingId}`);
         setBookingModalStation(null);
@@ -439,9 +464,13 @@ export default function App() {
       console.log('Backend delete fallback active.');
     }
 
-    setBookingsHistory((prev) =>
-      prev.filter((b) => (b._id || b.bookingId) !== targetId)
-    );
+    setBookingsHistory((prev) => {
+      const updated = prev.filter((b) => (b._id || b.bookingId) !== targetId);
+      if (!user?.email) {
+        localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
+      }
+      return updated;
+    });
     alert(`Booking ${booking.bookingId} deleted.`);
   };
 
