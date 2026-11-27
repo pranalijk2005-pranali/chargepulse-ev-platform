@@ -58,6 +58,7 @@ const stationSchema = new mongoose.Schema({
 
 const bookingSchema = new mongoose.Schema({
   bookingId: { type: String, unique: true, required: true },
+  userEmail: { type: String, index: true },
   stationId: String,
   stationName: String,
   connector: String,
@@ -458,12 +459,25 @@ app.post('/api/payments/create-order', (req, res) => {
   res.json({ success: true, orderId: `order_${Date.now()}` });
 });
 
-// 7. Verify payment & save booking
+// 7. Verify payment & save booking (scoped to userEmail)
 app.post('/api/payments/verify', async (req, res) => {
   try {
+    let userEmail = (req.body.userEmail || '').trim().toLowerCase();
+
+    if (!userEmail && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      const token = req.headers.authorization.split(' ')[1];
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded && decoded.email) {
+          userEmail = decoded.email.trim().toLowerCase();
+        }
+      } catch (e) {}
+    }
+
     const booking = new Booking({
       bookingId: `BK-${Date.now().toString().slice(-6)}`,
       ...req.body,
+      userEmail: userEmail || undefined,
       date: new Date().toLocaleDateString()
     });
     await booking.save();
@@ -473,10 +487,14 @@ app.post('/api/payments/verify', async (req, res) => {
   }
 });
 
-// 8. Get bookings history
+// 8. Get bookings history (scoped to userEmail)
 app.get('/api/bookings', async (req, res) => {
   try {
-    const bookings = await Booking.find({}).sort({ createdAt: -1 });
+    const email = (req.query.email || '').trim().toLowerCase();
+    if (!email) {
+      return res.json({ success: true, bookings: [] });
+    }
+    const bookings = await Booking.find({ userEmail: email }).sort({ createdAt: -1 });
     res.json({ success: true, bookings });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -506,7 +524,7 @@ app.delete('/api/bookings/:id', async (req, res) => {
       const updatedStation = await Station.findOneAndUpdate(
         {
           stationId: deletedBooking.stationId,
-          $expr: { $lt: ['$portsAvail', '$portsTotal'] }
+          $expr: {$lt: ['$portsAvail', '$portsTotal'] }
         },
         { $inc: { portsAvail: 1 } },
         { new: true }
