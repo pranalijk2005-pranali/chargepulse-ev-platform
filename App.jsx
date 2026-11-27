@@ -40,6 +40,8 @@ export default function App() {
   const [stations, setStations] = useState([]);
   const [bookingsHistory, setBookingsHistory] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   // Auth State (JWT)
   const [user, setUser] = useState(null);
@@ -89,13 +91,23 @@ export default function App() {
     const savedFavs = localStorage.getItem('chargepulse_favs');
 
     if (savedToken && savedUser) {
-      setUser(JSON.parse(savedUser));
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch {
+        localStorage.removeItem('chargepulse_user');
+      }
     }
     if (savedFavs) {
-      setFavorites(JSON.parse(savedFavs));
+      try {
+        setFavorites(JSON.parse(savedFavs));
+      } catch {
+        localStorage.removeItem('chargepulse_favs');
+      }
     }
 
-    const socket = io(API_BASE);
+    const socket = io(API_BASE, {
+      transports: ['websocket', 'polling']
+    });
 
     socket.on('connect', () => {
       console.log('Connected to ChargePulse live updates engine');
@@ -157,10 +169,13 @@ export default function App() {
     async function loadStations() {
       try {
         const res = await fetch(`${API_BASE}/api/stations`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (data.success) setStations(data.stations);
+        if (data.success && Array.isArray(data.stations)) {
+          setStations(data.stations);
+        }
       } catch (err) {
-        console.log('Backend server offline.');
+        console.log('Backend server offline or waking up:', err.message);
       }
     }
     loadStations();
@@ -177,10 +192,13 @@ export default function App() {
         const resB = await fetch(
           `${API_BASE}/api/bookings?email=${encodeURIComponent(user.email)}`
         );
+        if (!resB.ok) throw new Error(`HTTP ${resB.status}`);
         const dataB = await resB.json();
-        if (dataB.success) setBookingsHistory(dataB.bookings);
+        if (dataB.success && Array.isArray(dataB.bookings)) {
+          setBookingsHistory(dataB.bookings);
+        }
       } catch (err) {
-        console.log('Bookings API offline.');
+        console.log('Bookings API offline:', err.message);
       }
     }
     loadUserBookings();
@@ -189,41 +207,52 @@ export default function App() {
   // JWT AUTHENTICATION HANDLERS
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!authForm.email || !authForm.password) {
+    const trimmedEmail = authForm.email.trim().toLowerCase();
+    const trimmedName = authForm.name.trim();
+
+    if (!trimmedEmail || !authForm.password) {
       alert('Fill out all credentials');
       return;
     }
+    if (isSignUp && !trimmedName) {
+      alert('Please enter your full name');
+      return;
+    }
 
+    setIsAuthSubmitting(true);
     try {
       const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
+      const payload = isSignUp
+        ? { name: trimmedName, email: trimmedEmail, password: authForm.password }
+        : { email: trimmedEmail, password: authForm.password };
+
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authForm)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
 
-      if (data.success) {
+      if (res.ok && data.success) {
         localStorage.setItem('chargepulse_token', data.token);
         localStorage.setItem('chargepulse_user', JSON.stringify(data.user));
         setUser(data.user);
         setAuthModalOpen(false);
+        setAuthForm({ name: '', email: '', password: '' });
         alert(`Welcome, ${data.user.name}! Successfully authenticated.`);
       } else {
-        const mockUser = { name: authForm.name || 'EV Driver', email: authForm.email };
-        localStorage.setItem('chargepulse_token', 'mock_jwt_token_12345');
-        localStorage.setItem('chargepulse_user', JSON.stringify(mockUser));
-        setUser(mockUser);
-        setAuthModalOpen(false);
-        alert(`Welcome, ${mockUser.name}! (Local Demo Session Active)`);
+        alert(data.message || data.error || 'Authentication failed. Check your credentials.');
       }
     } catch (err) {
-      const mockUser = { name: authForm.name || 'EV Driver', email: authForm.email };
+      const mockUser = { name: trimmedName || 'EV Driver', email: trimmedEmail };
       localStorage.setItem('chargepulse_token', 'mock_jwt_token_12345');
       localStorage.setItem('chargepulse_user', JSON.stringify(mockUser));
       setUser(mockUser);
       setAuthModalOpen(false);
+      setAuthForm({ name: '', email: '', password: '' });
       alert(`Welcome, ${mockUser.name}! (Offline Demo Session Active)`);
+    } finally {
+      setIsAuthSubmitting(false);
     }
   };
 
@@ -272,7 +301,7 @@ export default function App() {
       const res = await fetch(
         `https://api.openchargemap.io/v3/poi/?output=json&countrycode=IN&latitude=${userLocation.lat}&longitude=${userLocation.lng}&distance=50&maxresults=50&compact=true&key=${OCM_API_KEY}`
       );
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(`Status ${res.status}`);
       const data = await res.json();
 
       const formatted = data.map((st) => {
@@ -309,9 +338,10 @@ export default function App() {
         const ids = new Set(prev.map((s) => s.stationId));
         return [...formatted.filter((s) => !ids.has(s.stationId)), ...prev];
       });
+      setSosEmergencyOnly(false);
       alert(`Successfully synced ${formatted.length} live local stations nearby!`);
     } catch (err) {
-      alert('Failed to connect to OpenChargeMap API.');
+      alert(`Failed to connect to OpenChargeMap API (${err.message || 'Network error'}).`);
     } finally {
       setIsSyncing(false);
     }
@@ -319,7 +349,20 @@ export default function App() {
 
   // Payment Handler
   const handlePayment = async (station) => {
+    if (isPaying) return;
+    setIsPaying(true);
+
     const stationId = station.stationId || station._id;
+    const fallbackBooking = () => ({
+      bookingId: `CP-${Math.floor(100000 + Math.random() * 900000)}`,
+      stationId,
+      date: new Date().toLocaleDateString(),
+      stationName: station.name,
+      connector: `${station.connector} (${selectedPort})`,
+      slotTime: selectedTimeSlot,
+      cost: station.price || 50
+    });
+
     try {
       const token = localStorage.getItem('chargepulse_token');
 
@@ -333,7 +376,7 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           userEmail: user?.email || null,
@@ -346,43 +389,37 @@ export default function App() {
       });
       const verifyData = await verifyRes.json();
 
-      if (verifyData.success) {
-        const newBooking = verifyData.booking;
-        setBookingsHistory((prev) => {
-          const updated = [newBooking, ...prev];
-          if (!user?.email) {
-            localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
-          }
-          return updated;
-        });
-        setActiveSession({ station, port: selectedPort, time: selectedTimeSlot });
-        alert(`Booking Confirmed!\nBooking ID: ${newBooking.bookingId}`);
-        setBookingModalStation(null);
-        setActiveTab('bookings');
-      } else {
-        const mockBooking = {
-          bookingId: `CP-${Math.floor(100000 + Math.random() * 900000)}`,
-          stationId,
-          date: new Date().toLocaleDateString(),
-          stationName: station.name,
-          connector: `${station.connector} (${selectedPort})`,
-          slotTime: selectedTimeSlot,
-          cost: station.price || 50
-        };
-        setBookingsHistory((prev) => {
-          const updated = [mockBooking, ...prev];
-          if (!user?.email) {
-            localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
-          }
-          return updated;
-        });
-        setActiveSession({ station, port: selectedPort, time: selectedTimeSlot });
-        alert(`Booking Confirmed!\nBooking ID: ${mockBooking.bookingId}`);
-        setBookingModalStation(null);
-        setActiveTab('bookings');
-      }
+      const confirmedBooking =
+        verifyRes.ok && verifyData.success && verifyData.booking
+          ? verifyData.booking
+          : fallbackBooking();
+
+      setBookingsHistory((prev) => {
+        const updated = [confirmedBooking, ...prev];
+        if (!user?.email) {
+          localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
+        }
+        return updated;
+      });
+      setActiveSession({ station, port: selectedPort, time: selectedTimeSlot });
+      alert(`Booking Confirmed!\nBooking ID: ${confirmedBooking.bookingId}`);
+      setBookingModalStation(null);
+      setActiveTab('bookings');
     } catch (err) {
-      alert('Booking saved to local history.');
+      const offlineBooking = fallbackBooking();
+      setBookingsHistory((prev) => {
+        const updated = [offlineBooking, ...prev];
+        if (!user?.email) {
+          localStorage.setItem('chargepulse_guest_bookings', JSON.stringify(updated));
+        }
+        return updated;
+      });
+      setActiveSession({ station, port: selectedPort, time: selectedTimeSlot });
+      alert(`Booking saved to local history.\nBooking ID: ${offlineBooking.bookingId}`);
+      setBookingModalStation(null);
+      setActiveTab('bookings');
+    } finally {
+      setIsPaying(false);
     }
   };
 
@@ -487,10 +524,12 @@ export default function App() {
         body: JSON.stringify(newStation)
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setStations((prev) => [data.station, ...prev]);
         alert('Station published successfully!');
         setActiveTab('explore');
+      } else {
+        alert(data.error || 'Failed to publish station.');
       }
     } catch (err) {
       alert('Failed to publish station.');
@@ -596,7 +635,7 @@ export default function App() {
           <button
             onClick={handleSyncOpenChargeMap}
             disabled={isSyncing}
-            className="hidden sm:flex bg-[#0c1322] hover:bg-slate-800 border border-cyan-500/20 text-cyan-300 text-xs px-3.5 py-2 rounded-xl items-center space-x-2 transition"
+            className="hidden sm:flex bg-[#0c1322] hover:bg-slate-800 border border-cyan-500/20 text-cyan-300 text-xs px-3.5 py-2 rounded-xl items-center space-x-2 transition disabled:opacity-60"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>{isSyncing ? 'Syncing...' : 'Sync Live API'}</span>
@@ -1124,7 +1163,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white">Reserve Charging Slot</h3>
               <button
-                onClick={() => setBookingModalStation(null)}
+                onClick={() => !isPaying && setBookingModalStation(null)}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1161,10 +1200,15 @@ export default function App() {
 
             <button
               onClick={() => handlePayment(bookingModalStation)}
-              className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-3 rounded-xl text-xs flex items-center justify-center gap-2"
+              disabled={isPaying}
+              className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-3 rounded-xl text-xs flex items-center justify-center gap-2 disabled:opacity-60"
             >
               <CreditCard className="w-4 h-4" />
-              <span>Confirm & Pay ₹{bookingModalStation.price}</span>
+              <span>
+                {isPaying
+                  ? 'Confirming Booking...'
+                  : `Confirm & Pay ₹${bookingModalStation.price}`}
+              </span>
             </button>
           </div>
         </div>
@@ -1179,7 +1223,7 @@ export default function App() {
                 {isSignUp ? 'Create Driver Account' : 'Driver Sign In'}
               </h3>
               <button
-                onClick={() => setAuthModalOpen(false)}
+                onClick={() => !isAuthSubmitting && setAuthModalOpen(false)}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1218,9 +1262,16 @@ export default function App() {
               </div>
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs"
+                disabled={isAuthSubmitting}
+                className="w-full bg-gradient-to-r from-cyan-400 to-lime-300 hover:brightness-105 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs disabled:opacity-60"
               >
-                {isSignUp ? 'Sign Up' : 'Sign In'}
+                {isAuthSubmitting
+                  ? isSignUp
+                    ? 'Creating Account...'
+                    : 'Signing In...'
+                  : isSignUp
+                  ? 'Sign Up'
+                  : 'Sign In'}
               </button>
             </form>
 
